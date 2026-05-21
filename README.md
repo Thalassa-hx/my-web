@@ -2,6 +2,10 @@
 
 React + Socket.IO CABO game prototype with local AI mode and an online room mode.
 
+## One-click Render deploy
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Thalassa-hx/my-web)
+
 ## Local development
 
 ```bash
