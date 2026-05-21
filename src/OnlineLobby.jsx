@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { io } from 'socket.io-client';
 
 const SERVER_URL = import.meta.env.VITE_CABO_SERVER_URL || window.location.origin;
+const normalizeRoomCode = value => String(value || '').replace(/[^a-z0-9]/gi, '').slice(0, 4);
+const submitRoomCode = value => normalizeRoomCode(value).toUpperCase();
 
 export default function OnlineLobby({ onBack }) {
   const [socket, setSocket] = useState(null);
@@ -38,7 +40,7 @@ export default function OnlineLobby({ onBack }) {
       if (!response?.ok) {
         setError(response?.error || '操作失败，请稍后再试。');
       } else if (response.roomId) {
-        setRoomCode(response.roomId);
+        setRoomCode(submitRoomCode(response.roomId));
       }
     });
   };
@@ -95,12 +97,18 @@ export default function OnlineLobby({ onBack }) {
               <div className="flex gap-2">
                 <input
                   value={roomCode}
-                  onChange={event => setRoomCode(event.target.value.toUpperCase())}
+                  onChange={event => setRoomCode(normalizeRoomCode(event.target.value))}
                   placeholder="ABCD"
+                  maxLength={4}
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck={false}
                   className="min-w-0 flex-1 bg-white/10 border border-white/10 rounded-xl px-3 py-3 text-sm uppercase outline-none focus:border-blue-400"
                 />
                 <button
-                  onClick={() => callServer('room:join', { roomId: roomCode, name })}
+                  onClick={() => callServer('room:join', { roomId: submitRoomCode(roomCode), name })}
                   className="px-4 rounded-xl bg-white/10 border border-white/10 text-sm font-bold"
                 >
                   加入
