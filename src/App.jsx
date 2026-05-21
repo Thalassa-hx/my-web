@@ -2,8 +2,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import OnlineLobby from './OnlineLobby.jsx';
 
 // --- 音效系统 ---
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-const playTone = (freq, type, duration, vol=0.1) => {
+let audioCtx = null;
+const audioPrefs = { sfx: true };
+const getAudioCtx = () => {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+};
+const setSfxEnabled = (enabled) => {
+    audioPrefs.sfx = enabled;
+};
+const playTone = (freq, type, duration, vol=0.1, force=false) => {
+    if (!force && !audioPrefs.sfx) return;
+    const audioCtx = getAudioCtx();
     if (audioCtx.state === 'suspended') audioCtx.resume();
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
@@ -25,6 +35,11 @@ const sounds = {
     success: () => playTone(800, 'sine', 0.2, 0.05),
     flip: () => playTone(300, 'square', 0.05, 0.02)
 };
+
+const musicPattern = [
+    [196, 0.12], [246.94, 0.08], [293.66, 0.1], [246.94, 0.08],
+    [220, 0.1], [261.63, 0.08], [329.63, 0.12], [261.63, 0.08]
+];
 
 class AppErrorBoundary extends React.Component {
     constructor(props) {
@@ -77,11 +92,22 @@ const getCardLetter = (player, cardId) => {
     return String.fromCharCode(65 + idx); 
 };
 
-const getHandScore = (cards) => cards.reduce((sum, card) => sum + card.val, 0);
+const UNKNOWN_CARD_ESTIMATE = 6;
 
-const getWorstCard = (cards) => cards.reduce((worst, card) => (
-    card.val > worst.val ? card : worst
-), cards[0]);
+const makeKnownCards = (cards, count = 2) => {
+    const shuffled = [...cards].sort(() => Math.random() - 0.5);
+    return Object.fromEntries(shuffled.slice(0, count).map(card => [card.id, true]));
+};
+
+const getKnownValue = (player, card) => (
+    card.isPublic || player.knownCards?.[card.id] ? card.val : UNKNOWN_CARD_ESTIMATE
+);
+
+const getEstimatedHandScore = (player) => player.cards.reduce((sum, card) => sum + getKnownValue(player, card), 0);
+
+const getAIWorstCard = (ai) => ai.cards.reduce((worst, card) => (
+    getKnownValue(ai, card) > getKnownValue(ai, worst) ? card : worst
+), ai.cards[0]);
 
 const shouldSwapInCard = (incomingCard, currentCard) => {
     if (!incomingCard || !currentCard) return false;
@@ -89,18 +115,19 @@ const shouldSwapInCard = (incomingCard, currentCard) => {
 };
 
 const shouldAIUseDiscard = (topDiscard, ai) => {
-    const worstCard = getWorstCard(ai.cards);
-    return shouldSwapInCard(topDiscard, worstCard) && topDiscard.val <= 6;
+    const worstCard = getAIWorstCard(ai);
+    return topDiscard.val < getKnownValue(ai, worstCard) && topDiscard.val <= 6;
 };
 
 const shouldAICallCabo = (ai, playersCount) => {
-    const score = getHandScore(ai.cards);
+    const score = getEstimatedHandScore(ai);
     const cardCount = ai.cards.length || 1;
     const average = score / cardCount;
+    const unknownCount = ai.cards.filter(card => !card.isPublic && !ai.knownCards?.[card.id]).length;
 
-    if (score <= 6) return true;
-    if (score <= 8 && average <= 2.25) return Math.random() < 0.75;
-    if (score <= 10 && average <= 2.5 && playersCount <= 3) return Math.random() < 0.35;
+    if (unknownCount === 0 && score <= 8) return true;
+    if (unknownCount <= 1 && score <= 9) return Math.random() < 0.75;
+    if (unknownCount <= 1 && score <= 11 && average <= 2.75 && playersCount <= 3) return Math.random() < 0.35;
     return false;
 };
 
@@ -172,6 +199,8 @@ export default function App() {
     const [highlightedCards, setHighlightedCards] = useState([]);
     
     const [aiActionText, setAiActionText] = useState(""); 
+    const [sfxOn, setSfxOn] = useState(true);
+    const [musicOn, setMusicOn] = useState(false);
 
     // --- 慢动作物理飞行动画 ---
     const [isAnimating, setIsAnimating] = useState(false);
@@ -188,6 +217,26 @@ export default function App() {
     useEffect(() => {
         if (logsEndRef.current) logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }, [logs]);
+
+    useEffect(() => {
+        setSfxEnabled(sfxOn);
+    }, [sfxOn]);
+
+    useEffect(() => {
+        if (!musicOn) return undefined;
+        const audioCtx = getAudioCtx();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        let step = 0;
+        const playMusicStep = () => {
+            const [freq, vol] = musicPattern[step % musicPattern.length];
+            playTone(freq, 'triangle', 0.24, vol, true);
+            playTone(freq / 2, 'sine', 0.32, vol * 0.35, true);
+            step += 1;
+        };
+        playMusicStep();
+        const interval = setInterval(playMusicStep, 620);
+        return () => clearInterval(interval);
+    }, [musicOn]);
 
     const addLog = (msg) => {
         setLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), text: msg }]);
@@ -235,15 +284,18 @@ export default function App() {
     };
 
     const startGame = (playerCount) => {
+        const audioCtx = getAudioCtx();
         if (audioCtx.state === 'suspended') audioCtx.resume();
         const newDeck = createDeck();
         const newPlayers = [];
         for (let i = 0; i < playerCount; i++) {
+            const cards = [newDeck.pop(), newDeck.pop(), newDeck.pop(), newDeck.pop()];
             newPlayers.push({
                 id: `p${i}`,
                 name: i === 0 ? '你 (玩家)' : `AI 玩家 ${i}`,
                 isAI: i !== 0,
-                cards: [newDeck.pop(), newDeck.pop(), newDeck.pop(), newDeck.pop()],
+                cards,
+                knownCards: i === 0 ? {} : makeKnownCards(cards, 2),
                 score: 0,
                 totalScore: 0
             });
@@ -335,9 +387,15 @@ export default function App() {
 
     const nextRound = () => {
         const newDeck = createDeck();
-        let resetPlayers = players.map(p => ({
-            ...p, cards: [newDeck.pop(), newDeck.pop(), newDeck.pop(), newDeck.pop()], score: 0
-        }));
+        let resetPlayers = players.map(p => {
+            const cards = [newDeck.pop(), newDeck.pop(), newDeck.pop(), newDeck.pop()];
+            return {
+                ...p,
+                cards,
+                knownCards: p.isAI ? makeKnownCards(cards, 2) : {},
+                score: 0
+            };
+        });
         
         const firstDiscard = newDeck.pop();
         firstDiscard.isPublic = true;
@@ -628,7 +686,7 @@ export default function App() {
             
             await narrateAI(`正在决定第一步要摸哪里的牌...`, AI_DECISION_PAUSE);
             
-            const worstCard = getWorstCard(ai.cards);
+            const worstCard = getAIWorstCard(ai);
 
             if (caboCaller === null && shouldAICallCabo(ai, players.length)) {
                 sounds.cabo();
@@ -667,7 +725,15 @@ export default function App() {
                 
                 let newPlayers = [...players];
                 let newDiscard = [...discard.slice(0, -1), { ...replaceCard, isPublic: true }];
-                newPlayers[turn].cards = ai.cards.map(c => c.id === replaceCard.id ? drawnPublic : c);
+                newPlayers[turn] = {
+                    ...newPlayers[turn],
+                    cards: ai.cards.map(c => c.id === replaceCard.id ? drawnPublic : c),
+                    knownCards: {
+                        ...(ai.knownCards || {}),
+                        [drawnPublic.id]: true
+                    }
+                };
+                delete newPlayers[turn].knownCards[replaceCard.id];
                 
                 addLog(`🤖 ${ai.name} 行动：用弃牌堆的 ${topDiscard.val} 换掉了自己的 [${aiLetter}]，被换出的 ${replaceCard.val} 已公开进入弃牌堆。`);
                 setHighlightedCards([drawnPublic.id]); 
@@ -685,8 +751,8 @@ export default function App() {
                 
                 await narrateAI(`AI 正捂着新牌偷偷看点数，先别急，它还在盘算...`, AI_DECISION_PAUSE);
 
-                const deckReplaceCard = getWorstCard(ai.cards);
-                const shouldKeepDrawn = drawn.val <= 6 && shouldSwapInCard(drawn, deckReplaceCard);
+                const deckReplaceCard = getAIWorstCard(ai);
+                const shouldKeepDrawn = drawn.val <= 6 && drawn.val < getKnownValue(ai, deckReplaceCard);
 
                 if (shouldKeepDrawn) {
                     // AI 决定进行替换
@@ -704,7 +770,15 @@ export default function App() {
                     let newPlayers = [...players];
                     let newDiscard = [...discard, { ...deckReplaceCard, isPublic: true }];
                     let newDeck = [...deck.slice(0, -1)];
-                    newPlayers[turn].cards = ai.cards.map(c => c.id === deckReplaceCard.id ? drawn : c);
+                    newPlayers[turn] = {
+                        ...newPlayers[turn],
+                        cards: ai.cards.map(c => c.id === deckReplaceCard.id ? drawn : c),
+                        knownCards: {
+                            ...(ai.knownCards || {}),
+                            [drawn.id]: true
+                        }
+                    };
+                    delete newPlayers[turn].knownCards[deckReplaceCard.id];
                     
                     addLog(`🤖 ${ai.name} 行动：用新摸的暗牌换掉了自己的 [${aiLetter}]，被换出的 ${deckReplaceCard.val} 已公开进入弃牌堆。`);
                     setHighlightedCards([drawn.id]); 
@@ -725,9 +799,17 @@ export default function App() {
                         await narrateAI(`卡牌技能触发！选择【偷看】自己的一张卡牌...`, AI_DECISION_PAUSE);
                         
                         const peekCard = ai.cards[Math.floor(Math.random() * ai.cards.length)];
+                        let newPlayers = [...players];
+                        newPlayers[turn] = {
+                            ...newPlayers[turn],
+                            knownCards: {
+                                ...(ai.knownCards || {}),
+                                [peekCard.id]: true
+                            }
+                        };
                         addLog(`👁️ ${ai.name} 弃置了 ${drawn.val}，顺便发动技能偷看了它的卡牌 [${getCardLetter(ai, peekCard.id)}]。`);
                         setHighlightedCards([peekCard.id]); 
-                        endTurn(players, newDiscard, newDeck);
+                        endTurn(newPlayers, newDiscard, newDeck);
                     }
                     else if (drawn.val >= 9 && drawn.val <= 10) {
                         await narrateAI(`卡牌技能触发！选择【侦查】你的一张卡牌...`, AI_DECISION_PAUSE);
@@ -745,12 +827,10 @@ export default function App() {
                              .filter(p => p.id !== ai.id)
                              .flatMap(p => p.cards.map(c => ({ card: c, ownerId: p.id })));
                          
-                         let target1 = { card: getWorstCard(ai.cards), ownerId: ai.id };
-                         let target2 = otherCards.reduce((best, target) => (
-                             target.card.val < best.card.val ? target : best
-                         ), otherCards[0]);
+                         let target1 = { card: getAIWorstCard(ai), ownerId: ai.id };
+                         let target2 = otherCards[Math.floor(Math.random() * otherCards.length)];
 
-                         if (!target2 || !shouldSwapInCard(target2.card, target1.card)) {
+                         if (!target2 || getKnownValue(ai, target1.card) <= 6) {
                             addLog(`🤖 ${ai.name} 弃置了 ${drawn.val}，但没找到值得交换的目标，放弃互换。`);
                             endTurn(players, newDiscard, newDeck);
                             return;
@@ -775,6 +855,11 @@ export default function App() {
                          let temp = player1.cards[index1];
                          player1.cards[index1] = player2.cards[index2];
                          player2.cards[index2] = temp;
+                         player1.knownCards = { ...(player1.knownCards || {}) };
+                         delete player1.knownCards[target1.card.id];
+                         if (target2.card.isPublic) {
+                            player1.knownCards[target2.card.id] = true;
+                         }
                          
                          addLog(`🔄 ${ai.name} 弃置了 ${drawn.val}并互换了卡牌：将 ${player1.name} 的 [${p1Letter}] 与 ${player2.name} 的 [${p2Letter}] 对调了位置！`);
                          setHighlightedCards([target1.card.id, target2.card.id]); 
@@ -885,6 +970,26 @@ export default function App() {
 
     return (
         <div className="h-[100dvh] w-full bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-slate-900 via-indigo-950 to-black text-white font-sans overflow-hidden flex flex-col relative">
+            <div className="absolute top-2 left-2 z-[80] flex gap-2">
+                <button
+                    onClick={() => {
+                        getAudioCtx().resume();
+                        setMusicOn(prev => !prev);
+                    }}
+                    className={`px-3 py-1.5 rounded-full border text-[11px] font-bold backdrop-blur-md ${musicOn ? 'bg-emerald-500/30 border-emerald-300 text-emerald-50' : 'bg-black/40 border-white/10 text-white/70'}`}
+                >
+                    音乐 {musicOn ? '开' : '关'}
+                </button>
+                <button
+                    onClick={() => {
+                        getAudioCtx().resume();
+                        setSfxOn(prev => !prev);
+                    }}
+                    className={`px-3 py-1.5 rounded-full border text-[11px] font-bold backdrop-blur-md ${sfxOn ? 'bg-blue-500/30 border-blue-300 text-blue-50' : 'bg-black/40 border-white/10 text-white/70'}`}
+                >
+                    音效 {sfxOn ? '开' : '关'}
+                </button>
+            </div>
             
             {/* 极速慢动作飞行卡牌蒙版 */}
             {flyingAnims && (
