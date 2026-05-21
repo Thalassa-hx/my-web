@@ -209,6 +209,7 @@ export default function App() {
 
     const logsEndRef = useRef(null);
     const aiTurnLockRef = useRef(null);
+    const actedMarkerTimeoutRef = useRef(null);
     const AI_TEXT_PAUSE = 2200;
     const AI_DECISION_PAUSE = 2600;
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -238,6 +239,14 @@ export default function App() {
         return () => clearInterval(interval);
     }, [musicOn]);
 
+    useEffect(() => {
+        return () => {
+            if (actedMarkerTimeoutRef.current) {
+                clearTimeout(actedMarkerTimeoutRef.current);
+            }
+        };
+    }, []);
+
     const addLog = (msg) => {
         setLogs(prev => [...prev, { time: new Date().toLocaleTimeString(), text: msg }]);
     };
@@ -245,6 +254,26 @@ export default function App() {
     const narrateAI = async (msg, delay = AI_TEXT_PAUSE) => {
         setAiActionText(msg);
         await sleep(delay);
+    };
+
+    const clearActedMarker = () => {
+        if (actedMarkerTimeoutRef.current) {
+            clearTimeout(actedMarkerTimeoutRef.current);
+            actedMarkerTimeoutRef.current = null;
+        }
+        setHighlightedCards([]);
+    };
+
+    const markActed = (cardIds, duration = 2600) => {
+        const ids = cardIds.filter(Boolean);
+        if (actedMarkerTimeoutRef.current) {
+            clearTimeout(actedMarkerTimeoutRef.current);
+        }
+        setHighlightedCards(ids);
+        actedMarkerTimeoutRef.current = setTimeout(() => {
+            setHighlightedCards([]);
+            actedMarkerTimeoutRef.current = null;
+        }, duration);
     };
 
     // --- 空间位移 FLIP 慢动画引擎 ---
@@ -273,11 +302,11 @@ export default function App() {
                     // 先恢复调用方，让目标位的真实卡牌在飞行动画下面完成渲染；
                     // 下一拍再撤掉飞行动画，避免“牌到位后卡一下才亮”的空档。
                     resolve();
-                    setTimeout(() => {
+                    requestAnimationFrame(() => {
                         setFlyingAnims(null);
                         setHiddenDomIds([]);
                         setIsAnimating(false);
-                    }, 120);
+                    });
                 }, 1100);
             }, 50);
         });
@@ -311,7 +340,7 @@ export default function App() {
         setCaboCaller(null);
         setLogs([]);
         setPeekedCards({});
-        setHighlightedCards([]);
+        clearActedMarker();
         setDrawnCards({});
         setAiActionText("");
         aiTurnLockRef.current = null;
@@ -357,7 +386,7 @@ export default function App() {
     const handleRoundOver = (finalPlayers) => {
         setGameState('round_over');
         sounds.cabo();
-        setHighlightedCards([]); 
+        clearActedMarker(); 
         setAiActionText("");
         addLog("结算时刻！所有人翻开卡牌！");
 
@@ -407,7 +436,7 @@ export default function App() {
         setCaboCaller(null);
         setLogs([]);
         setPeekedCards({});
-        setHighlightedCards([]);
+        clearActedMarker();
         setDrawnCards({});
         setAiActionText("");
         aiTurnLockRef.current = null;
@@ -428,7 +457,7 @@ export default function App() {
     const drawFromDeck = async () => {
         if (isAnimating || phase !== 'start') return;
         sounds.draw();
-        setHighlightedCards([]);
+        clearActedMarker();
         
         const card = deck[deck.length - 1];
         
@@ -447,7 +476,7 @@ export default function App() {
     const drawFromDiscard = async () => {
         if (isAnimating || phase !== 'start') return;
         sounds.draw();
-        setHighlightedCards([]);
+        clearActedMarker();
         
         const card = discard[discard.length - 1];
         card.isPublic = true; 
@@ -475,6 +504,7 @@ export default function App() {
 
         const newDiscard = [...discard, cardToDiscard];
         setDiscard(newDiscard); 
+        markActed([card.id]);
         addLog(`你选择放弃该牌并将其丢入弃牌堆。`);
         
         if (drawnSource === 'deck') {
@@ -537,7 +567,7 @@ export default function App() {
             });
 
             newPlayers[turn].cards = newCards;
-            setHighlightedCards([card.id]); 
+            markActed([card.id, ...selectedCards]); 
         } else {
             sounds.error();
             addLog(`❌ 替换失败！你记错了手牌的点数。新牌退回，强行罚抽一张。`);
@@ -553,7 +583,7 @@ export default function App() {
             await animateAsync(moves);
 
             newPlayers[turn].cards = [...currentPlayer.cards, card, penaltyCard];
-            setHighlightedCards([card.id, penaltyCard.id]); 
+            markActed([card.id, penaltyCard.id]); 
         }
         
         endTurn(newPlayers, newDiscard, newDeck);
@@ -587,7 +617,7 @@ export default function App() {
                 endTurn(); 
             } else {
                 setPeekedCards({ [card.id]: true });
-                setHighlightedCards([card.id]); 
+                markActed([card.id]); 
                 addLog(`你偷看了自己的手牌 [${getCardLetter(players[0], card.id)}]。`);
             }
             return;
@@ -599,7 +629,7 @@ export default function App() {
                  endTurn(); 
              } else {
                  setPeekedCards({ [card.id]: true });
-                 setHighlightedCards([card.id]); 
+                 markActed([card.id]); 
                  const targetPlayer = players.find(p=>p.id===ownerId);
                  addLog(`你侦查了 ${targetPlayer.name} 的卡牌 [${getCardLetter(targetPlayer, card.id)}]。`);
              }
@@ -659,7 +689,7 @@ export default function App() {
             
             addLog(`🔄 互换完成：${player1.name} 的 [${p1Letter}] 与 ${player2.name} 的 [${p2Letter}] 互换了位置！`);
             
-            setHighlightedCards([tempTarget.card.id, card.id]); 
+            markActed([tempTarget.card.id, card.id]); 
             endTurn(newPlayers, discard, deck);
         }
     };
@@ -682,8 +712,6 @@ export default function App() {
         aiTurnLockRef.current = aiTurnKey;
         
         const playAI = async () => {
-            setHighlightedCards([]);
-            
             await narrateAI(`正在决定第一步要摸哪里的牌...`, AI_DECISION_PAUSE);
             
             const worstCard = getAIWorstCard(ai);
@@ -736,7 +764,7 @@ export default function App() {
                 delete newPlayers[turn].knownCards[replaceCard.id];
                 
                 addLog(`🤖 ${ai.name} 行动：用弃牌堆的 ${topDiscard.val} 换掉了自己的 [${aiLetter}]，被换出的 ${replaceCard.val} 已公开进入弃牌堆。`);
-                setHighlightedCards([drawnPublic.id]); 
+                markActed([drawnPublic.id, replaceCard.id]); 
                 endTurn(newPlayers, newDiscard, deck);
             } else {
                 // AI 从牌库抽牌
@@ -781,7 +809,7 @@ export default function App() {
                     delete newPlayers[turn].knownCards[deckReplaceCard.id];
                     
                     addLog(`🤖 ${ai.name} 行动：用新摸的暗牌换掉了自己的 [${aiLetter}]，被换出的 ${deckReplaceCard.val} 已公开进入弃牌堆。`);
-                    setHighlightedCards([drawn.id]); 
+                    markActed([drawn.id, deckReplaceCard.id]); 
                     endTurn(newPlayers, newDiscard, newDeck);
                 } else {
                     // AI 觉得太大，直接扔掉
@@ -793,6 +821,10 @@ export default function App() {
                     
                     let newDiscard = [...discard, { ...drawn, isPublic: true }]; 
                     let newDeck = [...deck.slice(0, -1)];
+                    setDiscard(newDiscard);
+                    setDeck(newDeck);
+                    setDrawnCards({});
+                    markActed([drawn.id]);
                     
                     // AI 对功能技能牌的处理
                     if (drawn.val >= 7 && drawn.val <= 8) {
@@ -808,7 +840,7 @@ export default function App() {
                             }
                         };
                         addLog(`👁️ ${ai.name} 弃置了 ${drawn.val}，顺便发动技能偷看了它的卡牌 [${getCardLetter(ai, peekCard.id)}]。`);
-                        setHighlightedCards([peekCard.id]); 
+                        markActed([drawn.id, peekCard.id]); 
                         endTurn(newPlayers, newDiscard, newDeck);
                     }
                     else if (drawn.val >= 9 && drawn.val <= 10) {
@@ -816,7 +848,7 @@ export default function App() {
                         
                         const targetCard = players[0].cards[Math.floor(Math.random() * players[0].cards.length)];
                         addLog(`🕵️ ${ai.name} 弃置了 ${drawn.val}，顺便发动技能看了一眼你的卡牌 [${getCardLetter(players[0], targetCard.id)}]！`);
-                        setHighlightedCards([targetCard.id]); 
+                        markActed([drawn.id, targetCard.id]); 
                         endTurn(players, newDiscard, newDeck);
                     }
                     else if (drawn.val >= 11 && drawn.val <= 12) {
@@ -832,6 +864,7 @@ export default function App() {
 
                          if (!target2 || getKnownValue(ai, target1.card) <= 6) {
                             addLog(`🤖 ${ai.name} 弃置了 ${drawn.val}，但没找到值得交换的目标，放弃互换。`);
+                            markActed([drawn.id]);
                             endTurn(players, newDiscard, newDeck);
                             return;
                          }
@@ -862,11 +895,12 @@ export default function App() {
                          }
                          
                          addLog(`🔄 ${ai.name} 弃置了 ${drawn.val}并互换了卡牌：将 ${player1.name} 的 [${p1Letter}] 与 ${player2.name} 的 [${p2Letter}] 对调了位置！`);
-                         setHighlightedCards([target1.card.id, target2.card.id]); 
+                         markActed([drawn.id, target1.card.id, target2.card.id]); 
                          endTurn(newPlayers, newDiscard, newDeck);
                          return;
                     } else {
                         addLog(`🤖 ${ai.name} 行动：丢弃大牌，不做任何动作，直接结束回合。`);
+                        markActed([drawn.id]);
                         endTurn(players, newDiscard, newDeck);
                     }
                 }
@@ -930,6 +964,7 @@ export default function App() {
     const renderDrawnSlot = (playerId, isMini = false) => {
         const card = drawnCards[playerId];
         const isHidden = card && hiddenDomIds.includes(card.id);
+        const isRecentlyActed = card && highlightedCards.includes(card.id);
         const playerObj = players.find(p => p.id === playerId);
         const isSelf = playerId === 'p0';
 
@@ -940,7 +975,8 @@ export default function App() {
         return (
             <div 
                 id={`drawn-slot-${playerId}`} 
-                className={`${sizeClasses} rounded-xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center bg-white/5 relative transition-opacity duration-300`}
+                className={`${sizeClasses} rounded-xl border-2 border-dashed border-white/20 flex flex-col items-center justify-center bg-white/5 relative transition-all duration-300
+                    ${isRecentlyActed ? 'ring-4 ring-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.8)] z-30' : ''}`}
             >
                 {card && !isHidden ? (
                     <div className="absolute inset-0">
@@ -956,6 +992,11 @@ export default function App() {
                         {isSelf ? "持牌" : "持牌"}
                     </div>
                 )}
+                {isRecentlyActed && gameState === 'playing' && (
+                    <div className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-pink-600 text-white text-[9px] px-2 py-0.5 rounded-full whitespace-nowrap shadow-lg animate-bounce">
+                        被操作过
+                    </div>
+                )}
             </div>
         );
     };
@@ -968,26 +1009,33 @@ export default function App() {
         );
     }
 
+    const discardTopCard = discard[discard.length - 1];
+    const discardRecentlyActed = discardTopCard && highlightedCards.includes(discardTopCard.id);
+
     return (
         <div className="h-[100dvh] w-full bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-slate-900 via-indigo-950 to-black text-white font-sans overflow-hidden flex flex-col relative">
-            <div className="absolute top-2 left-2 z-[80] flex gap-2">
+            <div className="absolute top-2 right-2 z-[80] flex gap-1.5 sm:gap-2">
                 <button
+                    aria-label={musicOn ? '关闭背景音乐' : '开启背景音乐'}
+                    title={musicOn ? '关闭背景音乐' : '开启背景音乐'}
                     onClick={() => {
                         getAudioCtx().resume();
                         setMusicOn(prev => !prev);
                     }}
-                    className={`px-3 py-1.5 rounded-full border text-[11px] font-bold backdrop-blur-md ${musicOn ? 'bg-emerald-500/30 border-emerald-300 text-emerald-50' : 'bg-black/40 border-white/10 text-white/70'}`}
+                    className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full border text-[12px] sm:text-[13px] font-black backdrop-blur-md shadow-lg ${musicOn ? 'bg-emerald-500/35 border-emerald-300 text-emerald-50' : 'bg-black/45 border-white/10 text-white/55'}`}
                 >
-                    音乐 {musicOn ? '开' : '关'}
+                    乐
                 </button>
                 <button
+                    aria-label={sfxOn ? '关闭音效' : '开启音效'}
+                    title={sfxOn ? '关闭音效' : '开启音效'}
                     onClick={() => {
                         getAudioCtx().resume();
                         setSfxOn(prev => !prev);
                     }}
-                    className={`px-3 py-1.5 rounded-full border text-[11px] font-bold backdrop-blur-md ${sfxOn ? 'bg-blue-500/30 border-blue-300 text-blue-50' : 'bg-black/40 border-white/10 text-white/70'}`}
+                    className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full border text-[12px] sm:text-[13px] font-black backdrop-blur-md shadow-lg ${sfxOn ? 'bg-blue-500/35 border-blue-300 text-blue-50' : 'bg-black/45 border-white/10 text-white/55'}`}
                 >
-                    音效 {sfxOn ? '开' : '关'}
+                    效
                 </button>
             </div>
             
@@ -1107,14 +1155,19 @@ export default function App() {
                             <div className="flex flex-col items-center">
                                 <div 
                                     id="discard-pile"
-                                    className={`w-[14vw] h-[21vw] max-w-[4.5rem] max-h-[6.5rem] rounded-xl cursor-pointer shadow-xl transition-transform ${phase === 'start' && players[turn]?.id === players[0].id && discard.length > 0 && !isAnimating ? 'hover:-translate-y-2 ring-2 ring-green-400' : 'opacity-100'} ${hiddenDomIds.includes(discard[discard.length-1]?.id) ? 'opacity-0' : ''}`}
+                                    className={`w-[14vw] h-[21vw] max-w-[4.5rem] max-h-[6.5rem] rounded-xl cursor-pointer shadow-xl relative transition-all ${phase === 'start' && players[turn]?.id === players[0].id && discard.length > 0 && !isAnimating ? 'hover:-translate-y-2 ring-2 ring-green-400' : 'opacity-100'} ${discardRecentlyActed ? 'ring-4 ring-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.8)] z-30' : ''} ${hiddenDomIds.includes(discardTopCard?.id) ? 'opacity-0' : ''}`}
                                     onClick={() => (phase === 'start' && players[turn]?.id === players[0].id && discard.length > 0) ? drawFromDiscard() : null}
                                 >
                                     {discard.length > 0 ? (
-                                        <PlayingCard val={discard[discard.length-1].val} isFaceUp={true} isMini={false} />
+                                        <PlayingCard val={discardTopCard.val} isFaceUp={true} isMini={false} />
                                     ) : (
                                         <div className="w-full h-full rounded-xl border-2 border-dashed border-white/20 flex items-center justify-center bg-white/5">
                                             <span className="text-white/20 text-[10px]">空</span>
+                                        </div>
+                                    )}
+                                    {discardRecentlyActed && gameState === 'playing' && (
+                                        <div className="absolute -top-5 left-1/2 transform -translate-x-1/2 bg-pink-600 text-white text-[9px] px-2 py-0.5 rounded-full whitespace-nowrap shadow-lg animate-bounce">
+                                            被操作过
                                         </div>
                                     )}
                                 </div>
