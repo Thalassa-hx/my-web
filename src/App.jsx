@@ -628,13 +628,12 @@ export default function App() {
             
             await narrateAI(`正在决定第一步要摸哪里的牌...`, AI_DECISION_PAUSE);
             
-            const aiScore = getHandScore(ai.cards);
             const worstCard = getWorstCard(ai.cards);
 
             if (caboCaller === null && shouldAICallCabo(ai, players.length)) {
                 sounds.cabo();
                 setCaboCaller(turn);
-                addLog(`🚨 ${ai.name} 行动：估算自己总分约 ${aiScore}，宣告了 "CABO"！`);
+                addLog(`🚨 ${ai.name} 行动：觉得时机成熟，宣告了 "CABO"！`);
                 await narrateAI(`${ai.name} 觉得自己的总分已经很低，宣告 CABO，本轮进入最后一圈。`);
                 endTurn();
                 return;
@@ -645,7 +644,7 @@ export default function App() {
                 // AI 拿弃牌堆
                 const replaceCard = worstCard;
                 const aiLetter = getCardLetter(ai, replaceCard.id);
-                await narrateAI(`看中弃牌堆的 [${topDiscard.val}]，它比自己最差的 [${aiLetter}] 更小，决定拿走`);
+                await narrateAI(`看中弃牌堆的明牌 [${topDiscard.val}]，决定拿走`);
                 
                 const drawnPublic = { ...topDiscard, isPublic: true };
                 sounds.draw();
@@ -658,7 +657,7 @@ export default function App() {
                 
                 sounds.success();
                 
-                await narrateAI(`用手里的 [${topDiscard.val}] 替换位置为 [${aiLetter}] 的高分牌 [${replaceCard.val}]`);
+                await narrateAI(`用手里的 [${topDiscard.val}] 替换位置为 [${aiLetter}] 的一张牌`);
                 
                 // 【精确定位双轨道飞行】
                 await animateAsync([
@@ -670,7 +669,7 @@ export default function App() {
                 let newDiscard = [...discard.slice(0, -1), { ...replaceCard, isPublic: true }];
                 newPlayers[turn].cards = ai.cards.map(c => c.id === replaceCard.id ? drawnPublic : c);
                 
-                addLog(`🤖 ${ai.name} 行动：用弃牌堆的 ${topDiscard.val} 换掉了自己的 [${aiLetter}]（${replaceCard.val}）。`);
+                addLog(`🤖 ${ai.name} 行动：用弃牌堆的 ${topDiscard.val} 换掉了自己的 [${aiLetter}]，被换出的 ${replaceCard.val} 已公开进入弃牌堆。`);
                 setHighlightedCards([drawnPublic.id]); 
                 endTurn(newPlayers, newDiscard, deck);
             } else {
@@ -694,7 +693,7 @@ export default function App() {
                     const aiLetter = getCardLetter(ai, deckReplaceCard.id);
                     sounds.success();
                     
-                    await narrateAI(`摸到 [${drawn.val}]，比位置 [${aiLetter}] 的 [${deckReplaceCard.val}] 更好，决定替换`);
+                    await narrateAI(`看过新摸的暗牌后，决定替换位置 [${aiLetter}] 的一张牌`);
                     
                     // 【精确定位双轨道飞行】
                     await animateAsync([
@@ -707,12 +706,12 @@ export default function App() {
                     let newDeck = [...deck.slice(0, -1)];
                     newPlayers[turn].cards = ai.cards.map(c => c.id === deckReplaceCard.id ? drawn : c);
                     
-                    addLog(`🤖 ${ai.name} 行动：抽到 ${drawn.val}，换掉了自己的 [${aiLetter}]（${deckReplaceCard.val}）。`);
+                    addLog(`🤖 ${ai.name} 行动：用新摸的暗牌换掉了自己的 [${aiLetter}]，被换出的 ${deckReplaceCard.val} 已公开进入弃牌堆。`);
                     setHighlightedCards([drawn.id]); 
                     endTurn(newPlayers, newDiscard, newDeck);
                 } else {
                     // AI 觉得太大，直接扔掉
-                    await narrateAI(`摸到 [${drawn.val}]，但自己最差的牌也只是 [${deckReplaceCard.val}]，不值得换，直接扔掉`);
+                    await narrateAI(`看过新摸的暗牌后，觉得不值得替换，准备直接丢掉`);
                     
                     sounds.discard();
                     // 【精确定位飞牌】从 AI 临时位飞向中间弃牌堆并亮出来
