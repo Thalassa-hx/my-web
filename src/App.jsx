@@ -183,6 +183,7 @@ export default function App() {
     const AI_TEXT_PAUSE = 2200;
     const AI_DECISION_PAUSE = 2600;
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    const aiPlayers = players.filter(p => p.isAI);
 
     useEffect(() => {
         if (logsEndRef.current) logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -809,8 +810,8 @@ export default function App() {
         );  
 
         const sizeClasses = isMini 
-            ? 'w-[10vw] h-[15vw] max-w-[3.5rem] max-h-[5.25rem]' 
-            : 'w-[14vw] h-[21vw] max-w-[5rem] max-h-[7.5rem] md:w-[5.5rem] md:h-[8.25rem]';
+            ? 'cabo-card-mini'
+            : 'cabo-card-full';
 
         const playerObj = players.find(p => p.id === ownerId);
         const cardLetter = getCardLetter(playerObj, card.id);
@@ -849,8 +850,8 @@ export default function App() {
         const isSelf = playerId === 'p0';
 
         const sizeClasses = isMini 
-            ? 'w-[10vw] h-[15vw] max-w-[3.5rem] max-h-[5.25rem]' 
-            : 'w-[14vw] h-[21vw] max-w-[5rem] max-h-[7.5rem] md:w-[5.5rem] md:h-[8.25rem]';
+            ? 'cabo-card-mini'
+            : 'cabo-card-full';
 
         return (
             <div 
@@ -936,22 +937,25 @@ export default function App() {
             )}
 
             {gameState !== 'menu' && (
-                <div className="flex-1 flex flex-col h-full w-full max-w-4xl mx-auto p-2 md:p-4 z-10 relative">
+                <div className="flex-1 flex flex-col h-full w-full max-w-5xl xl:w-[calc(100%-20rem)] xl:mr-80 xl:ml-0 mx-auto p-2 md:p-4 z-10 relative box-border">
                     
                     {/* 顶部：对手 (带专属临时持牌位) */}
-                    <div className="flex justify-start md:justify-center overflow-x-auto gap-3 md:gap-5 pb-2 w-full snap-x scrollbar-hide pt-2 min-h-[110px]">
-                        {players.filter(p => p.isAI).map(p => (
-                            <div key={p.id} id={`player-${p.id}-container`} className={`flex-shrink-0 snap-center flex flex-col items-center bg-black/40 backdrop-blur-md border ${players[turn]?.id === p.id ? 'border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.2)]' : 'border-white/10'} rounded-2xl p-2 md:p-3 transition-all min-w-[190px]`}>
-                                <div className="text-xs font-bold flex items-center gap-1 text-white/90 mb-1">
-                                    🤖 {p.name}
-                                    {caboCaller === players.findIndex(pl => pl.id === p.id) && <span className="bg-gradient-to-r from-red-500 to-orange-500 text-white text-[9px] px-1.5 py-0.5 rounded shadow-sm ml-1">CABO</span>}
+                    <div className="opponents-grid w-full pb-2 pt-2 shrink-0" data-count={aiPlayers.length}>
+                        {aiPlayers.map(p => (
+                            <div key={p.id} id={`player-${p.id}-container`} className={`opponent-panel min-w-0 overflow-hidden flex flex-col items-center bg-black/40 backdrop-blur-md border ${players[turn]?.id === p.id ? 'border-yellow-400 shadow-[0_0_15px_rgba(250,204,21,0.2)]' : 'border-white/10'} rounded-2xl transition-all`}>
+                                <div className="w-full min-w-0 flex items-center justify-between gap-2 mb-2">
+                                    <div className="min-w-0 text-[11px] md:text-xs font-bold flex items-center gap-1 text-white/90 truncate">
+                                        <span className="shrink-0">🤖</span>
+                                        <span className="truncate">{p.name}</span>
+                                        {caboCaller === players.findIndex(pl => pl.id === p.id) && <span className="shrink-0 bg-gradient-to-r from-red-500 to-orange-500 text-white text-[9px] px-1.5 py-0.5 rounded shadow-sm">CABO</span>}
+                                    </div>
+                                    <div className="shrink-0 text-[9px] bg-white/10 px-2 rounded text-white/60">分数: {p.totalScore}</div>
                                 </div>
-                                <div className="text-[9px] bg-white/10 px-2 rounded text-white/60 mb-2">分数: {p.totalScore}</div>
-                                <div className="flex gap-2 items-center">
-                                    <div className="flex gap-1">
+                                <div className="opponent-cards flex items-center justify-center w-full min-w-0">
+                                    <div className="opponent-hand flex min-w-0 flex-wrap justify-center">
                                         {p.cards.map(c => renderCardWrapper(c, p.id, false, true))}
                                     </div>
-                                    <div className="border-l border-white/20 pl-2">
+                                    <div className="opponent-slot border-l border-white/20 shrink-0">
                                         {renderDrawnSlot(p.id, true)}
                                     </div>
                                 </div>
@@ -960,10 +964,10 @@ export default function App() {
                     </div>
 
                     {/* 中部：游戏区 */}
-                    <div className="flex-1 flex flex-col items-center justify-center w-full relative py-1">
+                    <div className="table-center flex-1 flex flex-col items-center justify-center w-full relative py-1">
                         
                         {/* 实时保姆级解说栏 */}
-                        <div className="mb-4 px-4 py-3 bg-gradient-to-r from-indigo-900/90 to-purple-900/90 backdrop-blur-xl border border-white/20 rounded-2xl text-xs md:text-sm font-bold text-yellow-100 shadow-xl max-w-[95%] md:max-w-md w-full min-h-[52px] text-center flex items-center justify-center gap-2">
+                        <div className="table-hint mb-4 px-4 py-3 bg-gradient-to-r from-indigo-900/90 to-purple-900/90 backdrop-blur-xl border border-white/20 rounded-2xl text-xs md:text-sm font-bold text-yellow-100 shadow-xl max-w-[95%] md:max-w-md w-full min-h-[52px] text-center flex items-center justify-center gap-2">
                             {isAnimating ? <span className="animate-spin text-white">⚙️</span> : <span className="animate-pulse text-green-400">●</span>}
                             <span className="leading-snug">
                                 {gameState === 'peek_start' && `初始准备: 请点击查看你任意的两张牌`}
@@ -983,7 +987,7 @@ export default function App() {
                         </div>
 
                         {/* 公共牌堆 */}
-                        <div className="flex justify-center items-end gap-6 md:gap-12 w-full mb-4">
+                        <div className="table-piles flex justify-center items-end gap-6 md:gap-12 w-full mb-4">
                             <div className="flex flex-col items-center">
                                 <div 
                                     id="deck-pile"
@@ -1015,7 +1019,7 @@ export default function App() {
                         </div>
 
                         {/* 下方控制按键区域 */}
-                        <div className="flex flex-wrap justify-center items-center gap-2 md:gap-4 w-full px-2 min-h-[44px]">
+                        <div className="table-controls flex flex-wrap justify-center items-center gap-2 md:gap-4 w-full px-2 min-h-[44px]">
                             {gameState === 'peek_start' && players[0].id === players[turn]?.id && (
                                 <button 
                                     onClick={() => { 
@@ -1074,7 +1078,7 @@ export default function App() {
 
                     {/* 底部：你(玩家)的区域 - 现在带有你专属的临时持牌位 */}
                     {players[0] && (
-                        <div id={`player-${players[0]?.id}-container`} className={`mt-auto mb-2 w-full max-w-xl self-center flex flex-col items-center bg-black/40 backdrop-blur-xl border ${players[turn]?.id === players[0].id ? 'border-blue-400 shadow-[0_0_20px_rgba(59,130,246,0.2)]' : 'border-white/10'} rounded-3xl p-3 md:p-5 transition-colors`}>
+                        <div id={`player-${players[0]?.id}-container`} className={`player-panel mt-auto mb-2 w-full max-w-xl self-center flex flex-col items-center bg-black/40 backdrop-blur-xl border ${players[turn]?.id === players[0].id ? 'border-blue-400 shadow-[0_0_20px_rgba(59,130,246,0.2)]' : 'border-white/10'} rounded-3xl p-3 md:p-5 transition-colors`}>
                             <div className="flex w-full justify-between items-center mb-3 px-1">
                                 <div className="text-sm md:text-base font-black flex items-center gap-2 text-white">
                                     👤 {players[0]?.name}
@@ -1103,7 +1107,7 @@ export default function App() {
 
             {/* PC/大屏右侧文字转播日志 */}
             {gameState !== 'menu' && (
-                <div className="hidden lg:flex absolute right-0 top-0 w-80 h-full bg-black/60 backdrop-blur-md border-l border-white/10 flex-col z-20 pointer-events-none">
+                <div className="hidden xl:flex absolute right-0 top-0 w-80 h-full bg-black/60 backdrop-blur-md border-l border-white/10 flex-col z-20 pointer-events-none">
                     <div className="p-4 border-b border-white/10 font-black text-yellow-400 tracking-widest text-center text-lg">
                         游戏实况转播
                     </div>
